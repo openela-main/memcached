@@ -1,0 +1,84 @@
+commit 8bbf383316f1bb16e45b05ad6e2ba9def88ba420
+Author: Tomas Korbar <tkorbar@redhat.com>
+Date:   Mon May 18 14:57:39 2020 +0200
+
+    improve sig_handler function
+
+diff --git a/memcached.c b/memcached.c
+index 3916a8c..2547305 100644
+--- a/memcached.c
++++ b/memcached.c
+@@ -189,7 +189,7 @@ static enum transmit_result transmit(conn *c);
+  * can block the listener via a condition.
+  */
+ static volatile bool allow_new_conns = true;
+-static bool stop_main_loop = false;
++static int stop_main_loop = NOT_STOP;
+ static struct event maxconnsevent;
+ static void maxconns_handler(const int fd, const short which, void *arg) {
+     struct timeval t = {.tv_sec = 0, .tv_usec = 10000};
+@@ -7850,8 +7850,8 @@ static void remove_pidfile(const char *pid_file) {
+ }
+ 
+ static void sig_handler(const int sig) {
++    stop_main_loop = EXIT_NORMALLY;
+     printf("Signal handled: %s.\n", strsignal(sig));
+-    exit(EXIT_SUCCESS);
+ }
+ 
+ static void sighup_handler(const int sig) {
+@@ -7860,7 +7860,7 @@ static void sighup_handler(const int sig) {
+ 
+ static void sig_usrhandler(const int sig) {
+     printf("Graceful shutdown signal handled: %s.\n", strsignal(sig));
+-    stop_main_loop = true;
++    stop_main_loop = GRACE_STOP;
+ }
+ 
+ #ifndef HAVE_SIGIGNORE
+@@ -9839,7 +9839,18 @@ int main (int argc, char **argv) {
+         }
+     }
+ 
+-    fprintf(stderr, "Gracefully stopping\n");
++    switch (stop_main_loop) {
++        case GRACE_STOP:
++            fprintf(stderr, "Gracefully stopping\n");
++        break;
++        case EXIT_NORMALLY:
++            fprintf(stderr, "Exiting normally\n");
++        break;
++        default:
++            fprintf(stderr, "Exiting on error\n");
++        break;
++    }
++
+     stop_threads();
+     int i;
+     // FIXME: make a function callable from threads.c
+@@ -9848,7 +9859,7 @@ int main (int argc, char **argv) {
+             conn_close(conns[i]);
+         }
+     }
+-    if (memory_file != NULL) {
++    if (memory_file != NULL && stop_main_loop == GRACE_STOP) {
+         restart_mmap_close();
+     }
+ 
+diff --git a/memcached.h b/memcached.h
+index 77f52aa..795ea8f 100644
+--- a/memcached.h
++++ b/memcached.h
+@@ -236,6 +236,12 @@ enum pause_thread_types {
+     RESUME_WORKER_THREADS
+ };
+ 
++enum stop_reasons {
++    NOT_STOP,
++    GRACE_STOP,
++    EXIT_NORMALLY
++};
++
+ #define IS_TCP(x) (x == tcp_transport)
+ #define IS_UDP(x) (x == udp_transport)
+ 

@@ -1,0 +1,23 @@
+commit d5b1c3f5f8abc2f51ed493e5a41826d510f95cbb
+Author: dormando <dormando@rydia.net>
+Date:   Fri Mar 6 00:36:39 2020 -0800
+
+    fix: all new connections were counted as rejected
+    
+    from an earlier patch from a static analyzer... :(
+
+diff --git a/memcached.c b/memcached.c
+index b560b32..ed3fc7d 100644
+--- a/memcached.c
++++ b/memcached.c
+@@ -6668,7 +6668,9 @@ static void drive_machine(conn *c) {
+             if (settings.maxconns_fast) {
+                 STATS_LOCK();
+                 reject = stats_state.curr_conns + stats_state.reserved_fds >= settings.maxconns - 1;
+-                stats.rejected_conns++;
++                if (reject) {
++                    stats.rejected_conns++;
++                }
+                 STATS_UNLOCK();
+             } else {
+                 reject = false;

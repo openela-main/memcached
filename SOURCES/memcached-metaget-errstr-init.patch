@@ -1,0 +1,19 @@
+commit 7e0270468aa4da5c82826c3c903442b8d6a670c4
+Author: Tomas Korbar <tkorbar@redhat.com>
+Date:   Mon May 18 15:23:12 2020 +0200
+
+    crash fix: errstr wasn't initialized in metaget
+
+diff --git a/memcached.c b/memcached.c
+index 3010236..2af1738 100644
+--- a/memcached.c
++++ b/memcached.c
+@@ -4434,7 +4434,7 @@ static void process_mget_command(conn *c, token_t *tokens, const size_t ntokens)
+     bool item_created = false;
+     bool won_token = false;
+     bool ttl_set = false;
+-    char *errstr;
++    char *errstr = "CLIENT_ERROR bad command line format";
+ 
+     assert(c != NULL);
+ 

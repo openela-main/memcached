@@ -1,0 +1,22 @@
+commit aac7d69207fa08c0114625fbfb35a11d88a0cace
+Author: dormando <dormando@rydia.net>
+Date:   Mon Mar 16 19:46:12 2020 -0700
+
+    tls: handle accept errors properly
+    
+    0 return from accept is also an error. pointed out by @tharanga on
+    review.
+
+diff --git a/memcached.c b/memcached.c
+index be93474..b9ce8b1 100644
+--- a/memcached.c
++++ b/memcached.c
+@@ -7021,7 +7021,7 @@ static void drive_machine(conn *c) {
+                     }
+                     SSL_set_fd(ssl, sfd);
+                     int ret = SSL_accept(ssl);
+-                    if (ret < 0) {
++                    if (ret <= 0) {
+                         int err = SSL_get_error(ssl, ret);
+                         if (err == SSL_ERROR_SYSCALL || err == SSL_ERROR_SSL) {
+                             if (settings.verbose) {
