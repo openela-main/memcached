@@ -1,0 +1,30 @@
+commit fa40655b49cc73194acc0e2410930f3e9a8322a7
+Author: dormando <dormando@rydia.net>
+Date:   Thu Mar 26 11:59:22 2020 -0700
+
+    restart: fix corrupted restart in some scenarios
+    
+    If the mmap file is reused but the memory isn't supposed to be reused,
+    pages are thrown into the global page pool. Normally when pages are
+    released into the pool the header of the page is zero'ed so the
+    restart_check() code will know to place it back into the global pool.
+    
+    When restarting multiple times the slabs_prefill() part of the startup
+    code was missing this zero'ing step, so the _next_ time restart happens
+    properly restart_check() could attempt to recover that memory.
+
+diff --git a/slabs.c b/slabs.c
+index 56b5840..ca8a8f2 100644
+--- a/slabs.c
++++ b/slabs.c
+@@ -299,6 +299,10 @@ void slabs_prefill_global(void) {
+     while (mem_malloced < mem_limit
+             && (ptr = memory_allocate(len)) != NULL) {
+         grow_slab_list(0);
++        // Ensure the front header is zero'd to avoid confusing restart code.
++        // It's probably good enough to cast it and just zero slabs_clsid, but
++        // this is extra paranoid.
++        memset(ptr, 0, sizeof(item));
+         p->slab_list[p->slabs++] = ptr;
+     }
+     mem_limit_reached = true;

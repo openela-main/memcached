@@ -1,0 +1,12 @@
+diff --git a/scripts/memcached.service b/scripts/memcached.service
+index 88a4b8a..a328a9a 100644
+--- a/scripts/memcached.service
++++ b/scripts/memcached.service
+@@ -11,6 +11,7 @@
+ 
+ [Unit]
+ Description=memcached daemon
++Before=httpd.service
+ After=network.target
+ 
+ [Service]

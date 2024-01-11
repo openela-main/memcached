@@ -1,0 +1,97 @@
+commit e360e34b1fd2cd69c3a08bfb7fa4fe75281b942a
+Author: Tomas Korbar <tkorbar@redhat.com>
+Date:   Tue May 19 08:42:12 2020 +0200
+
+    restart: fix rare segfault on shutdown
+
+diff --git a/memcached.c b/memcached.c
+index d769b4a..ac03b93 100644
+--- a/memcached.c
++++ b/memcached.c
+@@ -1009,6 +1009,18 @@ static void conn_shrink(conn *c) {
+     }
+ }
+ 
++// Since some connections might be off on side threads and some are managed as
++// listeners we need to walk through them all from a central point.
++// Must be called with all worker threads hung or in the process of closing.
++void conn_close_all(void) {
++    int i;
++    for (i = 0; i < max_fds; i++) {
++        if (conns[i] && conns[i]->state != conn_closed) {
++            conn_close(conns[i]);
++        }
++    }
++}
++
+ /**
+  * Convert a state name to a human readable form.
+  */
+@@ -9860,13 +9872,6 @@ int main (int argc, char **argv) {
+     }
+ 
+     stop_threads();
+-    int i;
+-    // FIXME: make a function callable from threads.c
+-    for (i = 0; i < max_fds; i++) {
+-        if (conns[i] && conns[i]->state != conn_closed) {
+-            conn_close(conns[i]);
+-        }
+-    }
+     if (memory_file != NULL && stop_main_loop == GRACE_STOP) {
+         restart_mmap_close();
+     }
+diff --git a/memcached.h b/memcached.h
+index 6b1fe4a..bc2b395 100644
+--- a/memcached.h
++++ b/memcached.h
+@@ -814,9 +814,8 @@ enum delta_result_type add_delta(conn *c, const char *key,
+                                  const int64_t delta, char *buf,
+                                  uint64_t *cas);
+ void accept_new_conns(const bool do_accept);
+-conn *conn_from_freelist(void);
+-bool  conn_add_to_freelist(conn *c);
+ void  conn_close_idle(conn *c);
++void  conn_close_all(void);
+ item *item_alloc(char *key, size_t nkey, int flags, rel_time_t exptime, int nbytes);
+ #define DO_UPDATE true
+ #define DONT_UPDATE false
+diff --git a/thread.c b/thread.c
+index 7cba01e..6e19a2e 100644
+--- a/thread.c
++++ b/thread.c
+@@ -205,6 +205,7 @@ void stop_threads(void) {
+     if (settings.verbose > 0)
+         fprintf(stderr, "asking workers to stop\n");
+     buf[0] = 's';
++    pthread_mutex_lock(&worker_hang_lock);
+     pthread_mutex_lock(&init_lock);
+     init_count = 0;
+     for (i = 0; i < settings.num_threads; i++) {
+@@ -216,6 +217,8 @@ void stop_threads(void) {
+     wait_for_thread_registration(settings.num_threads);
+     pthread_mutex_unlock(&init_lock);
+ 
++    // All of the workers are hung but haven't done cleanup yet.
++
+     if (settings.verbose > 0)
+         fprintf(stderr, "asking background threads to stop\n");
+ 
+@@ -237,6 +240,17 @@ void stop_threads(void) {
+     if (settings.verbose > 0)
+         fprintf(stderr, "stopped idle timeout thread\n");
+ 
++    // Close all connections then let the workers finally exit.
++    if (settings.verbose > 0)
++        fprintf(stderr, "closing connections\n");
++    conn_close_all();
++    pthread_mutex_unlock(&worker_hang_lock);
++    if (settings.verbose > 0)
++        fprintf(stderr, "reaping worker threads\n");
++    for (i = 0; i < settings.num_threads; i++) {
++        pthread_join(threads[i].thread_id, NULL);
++    }
++
+     if (settings.verbose > 0)
+         fprintf(stderr, "all background threads stopped\n");
+ 

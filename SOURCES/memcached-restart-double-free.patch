@@ -1,0 +1,26 @@
+commit 0d4901071c74f9c3b63162ef5887a5c5b981f385
+Author: David Carlier <devnexen@gmail.com>
+Date:   Sat Feb 22 01:24:54 2020 +0000
+
+    restart: fix potential double free
+
+diff --git a/restart.c b/restart.c
+index 92a7295..9a83d3a 100644
+--- a/restart.c
++++ b/restart.c
+@@ -148,6 +148,7 @@ enum restart_get_kv_ret restart_get_kv(void *ctx, char **key, char **val) {
+     // have to re-assign it into the structure anyway.
+     if (c->line != NULL) {
+         free(c->line);
++        c->line = NULL;
+     }
+ 
+     if (getline(&line, &len, c->f) != -1) {
+@@ -198,6 +199,7 @@ enum restart_get_kv_ret restart_get_kv(void *ctx, char **key, char **val) {
+         } else {
+             // FIXME: proper error chain.
+             fprintf(stderr, "[restart] invalid metadata line:\n\n%s\n", line);
++            free(line);
+             return RESTART_BADLINE;
+         }
+     } else {

@@ -1,0 +1,83 @@
+commit 3b78790b2575daf0e8b3c2822a7e160273df20bd
+Author: Tomas Korbar <tkorbar@redhat.com>
+Date:   Tue May 19 08:35:29 2020 +0200
+
+    Include ssl errors in the stats
+
+diff --git a/doc/protocol.txt b/doc/protocol.txt
+index abe70b2..55479b7 100644
+--- a/doc/protocol.txt
++++ b/doc/protocol.txt
+@@ -1509,6 +1509,23 @@ The value of the "state" stat may be one of the following:
+ |                | sending back multiple lines of response data).            |
+ |----------------+-----------------------------------------------------------|
+ 
++TLS statistics
++--------------
++
++TLS is a compile-time opt-in feature available in versions 1.5.13 and later.
++When compiled with TLS support and TLS termination is enabled at runtime, the
++following additional statistics are available via the "stats" command.
++
++|--------------------------------+----------+--------------------------------|
++| Name                           | Type     | Meaning                        |
++|--------------------------------+----------+--------------------------------|
++| ssl_handshake_errors           | 64u      | Number of times the server has |
++|                                |          | encountered an OpenSSL error   |
++|                                |          | during handshake (SSL_accept). |
++| time_since_server_cert_refresh | 32u      | Number of seconds that have    |
++|                                |          | elapsed since the last time    |
++|                                |          | certs were reloaded from disk. |
++|--------------------------------+----------+--------------------------------|
+ 
+ 
+ Other commands
+diff --git a/memcached.c b/memcached.c
+index d81a71f..d769b4a 100644
+--- a/memcached.c
++++ b/memcached.c
+@@ -3428,6 +3428,7 @@ static void server_stats(ADD_STAT add_stats, conn *c) {
+ #endif
+ #ifdef TLS
+     if (settings.ssl_enabled) {
++        APPEND_STAT("ssl_handshake_errors", "%llu", (unsigned long long)stats.ssl_handshake_errors);
+         APPEND_STAT("time_since_server_cert_refresh", "%u", now - settings.ssl_last_cert_refresh_time);
+     }
+ #endif
+@@ -6779,6 +6780,9 @@ static void drive_machine(conn *c) {
+                             }
+                             SSL_free(ssl);
+                             close(sfd);
++                            STATS_LOCK();
++                            stats.ssl_handshake_errors++;
++                            STATS_UNLOCK();
+                             break;
+                         }
+                     }
+diff --git a/memcached.h b/memcached.h
+index 795ea8f..6b1fe4a 100644
+--- a/memcached.h
++++ b/memcached.h
+@@ -357,6 +357,9 @@ struct stats {
+     uint64_t      extstore_compact_lost; /* items lost because they were locked */
+     uint64_t      extstore_compact_rescues; /* items re-written during compaction */
+     uint64_t      extstore_compact_skipped; /* unhit items skipped during compaction */
++#endif
++#ifdef TLS
++    uint64_t      ssl_handshake_errors; /* TLS failures at accept/handshake time */
+ #endif
+     struct timeval maxconns_entered;  /* last time maxconns entered */
+ };
+diff --git a/t/stats.t b/t/stats.t
+index 028a60a..f1dcd54 100755
+--- a/t/stats.t
++++ b/t/stats.t
+@@ -26,7 +26,7 @@ my $stats = mem_stats($sock);
+ # Test number of keys
+ if (MemcachedTest::enabled_tls_testing()) {
+     # when TLS is enabled, stats contains time_since_server_cert_refresh
+-    is(scalar(keys(%$stats)), 72, "expected count of stats values");
++    is(scalar(keys(%$stats)), 73, "expected count of stats values");
+ } else {
+     is(scalar(keys(%$stats)), 71, "expected count of stats values");
+ }

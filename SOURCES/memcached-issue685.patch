@@ -1,0 +1,39 @@
+commit 48c2d30efef24270ea94fa133945b8ecd3a015e3
+Author: Tomas Korbar <tkorbar@redhat.com>
+Date:   Wed May 20 15:28:10 2020 +0200
+
+    Do not join lru and slab maintainer threads if they do not exist
+    
+    If no_modern option was supplied then these threads did not run
+    but memcached still attempted to join them, which resulted in a
+    segfault.
+    
+    resolve #685
+
+diff --git a/thread.c b/thread.c
+index f162d26..abbfca1 100644
+--- a/thread.c
++++ b/thread.c
+@@ -226,12 +226,16 @@ void stop_threads(void) {
+     stop_item_crawler_thread(CRAWLER_WAIT);
+     if (settings.verbose > 0)
+         fprintf(stderr, "stopped lru crawler\n");
+-    stop_lru_maintainer_thread();
+-    if (settings.verbose > 0)
+-        fprintf(stderr, "stopped maintainer\n");
+-    stop_slab_maintenance_thread();
+-    if (settings.verbose > 0)
+-        fprintf(stderr, "stopped slab mover\n");
++    if (settings.lru_maintainer_thread) {
++        stop_lru_maintainer_thread();
++        if (settings.verbose > 0)
++            fprintf(stderr, "stopped maintainer\n");
++    }
++    if (settings.slab_reassign) {
++        stop_slab_maintenance_thread();
++        if (settings.verbose > 0)
++            fprintf(stderr, "stopped slab mover\n");
++    }
+     logger_stop();
+     if (settings.verbose > 0)
+         fprintf(stderr, "stopped logger thread\n");
